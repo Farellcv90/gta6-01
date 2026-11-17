@@ -1,19 +1,162 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<link rel="icon" href="data:,">
+<title>Port Meridian — an original open-world crime game</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1d22;
+    font-family: Arial, Helvetica, sans-serif; color: #fff; }
+  #game-canvas, #game-canvas canvas { position: fixed; inset: 0; display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 5; }
+  .panel { background: rgba(10, 12, 18, 0.62); border-radius: 8px; padding: 8px 12px; }
+  #hud-top-left { position: absolute; top: 12px; left: 12px; }
+  #hud-name { font-weight: bold; font-size: 17px; letter-spacing: 0.5px; }
+  #hud-health { width: 190px; height: 10px; background: rgba(255,255,255,0.25);
+    border-radius: 5px; margin-top: 5px; overflow: hidden; }
+  #hud-health-fill { height: 100%; width: 100%; background: #40d060; border-radius: 5px; }
+  #hud-cash { font-size: 19px; font-weight: bold; color: #7dff8a; margin-top: 4px; }
+  #hud-stars { font-size: 21px; letter-spacing: 3px; margin-top: 2px; }
+  #hud-top-right { position: absolute; top: 12px; right: 12px; text-align: right; }
+  #hud-clock { font-size: 22px; font-weight: bold; }
+  #hud-city { font-size: 13px; color: #ffd34d; letter-spacing: 1px; }
+  /* Minimap sits BELOW the clock: top edge at 60px, never overlapping it. */
+  #minimap { position: absolute; top: 60px; right: 12px; width: 160px; height: 160px;
+    border: 2px solid rgba(255,255,255,0.5); border-radius: 6px; background: #2a2f38; }
+  #mission-tracker { position: absolute; top: 148px; left: 12px; max-width: 330px;
+    font-size: 14px; line-height: 1.45; }
+  #mission-tracker b { color: #ffd34d; }
+  #mission-tracker i { color: #cfe0ff; font-size: 13px; }
+  #side-line { position: absolute; top: 312px; left: 12px; font-size: 13px; color: #ffe9a8; }
+  #center-msg { position: absolute; top: 26%; left: 50%; transform: translateX(-50%);
+    font-size: 26px; font-weight: bold; color: #ffd34d; text-shadow: 0 2px 8px #000;
+    opacity: 0; transition: opacity 0.3s; text-align: center; }
+  #objective-toast { position: absolute; top: 33%; left: 50%; transform: translateX(-50%);
+    font-size: 17px; color: #fff; text-shadow: 0 2px 6px #000; opacity: 0;
+    transition: opacity 0.3s; text-align: center; }
+  #drive-panel { position: absolute; bottom: 18px; right: 16px; text-align: right; display: none; }
+  #speedo { font-size: 30px; font-weight: bold; }
+  #car-name { font-size: 14px; color: #ffd34d; }
+  #car-health { font-size: 13px; color: #cfe0ff; }
+  #ammo { position: absolute; bottom: 18px; left: 16px; font-size: 17px; font-weight: bold; }
+  #controls-hint { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: rgba(255,255,255,0.75); text-align: center; }
+  #crosshair { position: absolute; top: 50%; left: 50%; width: 22px; height: 22px;
+    transform: translate(-50%, -50%); display: none; }
+  #crosshair::before, #crosshair::after { content: ''; position: absolute; background: #fff;
+    box-shadow: 0 0 4px #000; }
+  #crosshair::before { left: 10px; top: 0; width: 2px; height: 22px; }
+  #crosshair::after { left: 0; top: 10px; width: 22px; height: 2px; }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(255,0,0,0.55) 100%);
+    transition: opacity 0.2s; }
+  .menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(160deg, rgba(30,16,40,0.88), rgba(10,20,40,0.9)); z-index: 10; }
+  .menu-card { max-width: 620px; padding: 36px 44px; text-align: center;
+    background: rgba(0,0,0,0.45); border-radius: 14px; border: 1px solid rgba(255,211,77,0.4); }
+  .menu-card h1 { font-size: 46px; color: #ffd34d; letter-spacing: 2px; margin-bottom: 4px; }
+  .menu-card h2 { font-size: 15px; color: #ff8ab0; font-weight: normal; margin-bottom: 16px; }
+  .menu-card p { font-size: 14px; line-height: 1.6; color: #e8e8e8; margin-bottom: 14px; }
+  .menu-card .controls { font-size: 13px; color: #cfe0ff; line-height: 1.8; margin-bottom: 18px; }
+  .menu-card button { display: block; width: 260px; margin: 8px auto; padding: 12px;
+    font-size: 16px; font-weight: bold; color: #111; background: #ffd34d; border: none;
+    border-radius: 8px; cursor: pointer; pointer-events: auto; }
+  .menu-card button.secondary { background: #3a4a6a; color: #fff; }
+  .menu-card button:hover { filter: brightness(1.12); }
+  #mission-list { text-align: left; font-size: 13px; line-height: 1.7; margin: 10px 0 16px;
+    background: rgba(255,255,255,0.07); padding: 10px 14px; border-radius: 8px; }
+  #mission-list span { color: #7dff8a; float: right; }
+  .menu-row { display: flex; gap: 14px; justify-content: center; align-items: center;
+    font-size: 13px; margin: 12px 0; }
+  .menu-row label { color: #cfe0ff; }
+  #gameover-title { font-size: 52px; color: #ff5040; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
+<div id="game-canvas"></div>
+<div id="vignette"></div>
+
+<div id="hud">
+  <div id="hud-top-left" class="panel">
+    <div id="hud-name">Mara Voss</div>
+    <div id="hud-health"><div id="hud-health-fill"></div></div>
+    <div id="hud-cash">$0</div>
+    <div id="hud-stars">☆☆☆☆☆</div>
+  </div>
+  <div id="hud-top-right">
+    <div id="hud-clock">17:15</div>
+    <div id="hud-city">PORT MERIDIAN</div>
+  </div>
+  <canvas id="minimap" width="160" height="160"></canvas>
+  <div id="mission-tracker" class="panel"></div>
+  <div id="side-line" class="panel"></div>
+  <div id="center-msg"></div>
+  <div id="objective-toast"></div>
+  <div id="drive-panel" class="panel">
+    <div id="speedo">0 km/h</div>
+    <div id="car-name">Street Car</div>
+    <div id="car-health">Car 100%</div>
+  </div>
+  <div id="ammo">Pistol 12/48</div>
+  <div id="controls-hint">WASD move · Shift sprint · Space jump · E steal/drive · F punch · RMB aim · LMB shoot · R reload · Esc pause</div>
+  <div id="crosshair"></div>
+</div>
+
+<div id="menu-start" class="menu">
+  <div class="menu-card">
+    <h1>PORT MERIDIAN</h1>
+    <h2>An original open-world crime game — built by an AI agent for make.fun</h2>
+    <p>Mara Voss came to Port Meridian to drive courier runs and stay clean. One bad
+    delivery later, two crews want her dead and the harbour police want her in cuffs.
+    Dario, the fixer, feeds her jobs. The last delivery buys her freedom.</p>
+    <p>7 story jobs · taxi fares · hidden tokens · police chases</p>
+    <div class="controls">
+      WASD move &nbsp;·&nbsp; Shift sprint &nbsp;·&nbsp; Space jump<br>
+      E steal / drive a car &nbsp;·&nbsp; F punch &nbsp;·&nbsp; Right mouse aim, left mouse shoot<br>
+      R reload &nbsp;·&nbsp; Esc pause &amp; mission replay
+    </div>
+    <button id="btn-new">New Game</button>
+    <button id="btn-continue" class="secondary" style="display:none">Continue</button>
+    <p style="font-size:12px;color:#9aa8c0">A wholly original city, story and cast — no borrowed
+    characters, places or music. Sound is synthesized live with WebAudio.</p>
+  </div>
+</div>
+
+<div id="menu-pause" class="menu" style="display:none">
+  <div class="menu-card">
+    <h1 style="font-size:32px">PAUSED</h1>
+    <p id="pause-stats"></p>
+    <div id="mission-list"></div>
+    <button id="btn-replay">↻ Replay Mission</button>
+    <div class="menu-row">
+      <label>Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+      <label>Quality
+        <select id="quality">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </label>
+    </div>
+    <button id="btn-resume">Resume</button>
+    <button id="btn-restart" class="secondary">Restart Story</button>
+    <button id="btn-quit" class="secondary">Quit to Title</button>
+  </div>
+</div>
+
+<div id="menu-gameover" class="menu" style="display:none">
+  <div class="menu-card">
+    <h1 id="gameover-title">BUSTED</h1>
+    <p id="gameover-text"></p>
+    <button id="btn-retry">Back on the streets</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
